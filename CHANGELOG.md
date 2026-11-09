@@ -16,6 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `flagpole import`: create or (with `--overwrite`) update flags from an export, all or nothing, with `--dry-run` (#4).
+- `flagpole backup`: copy the database with SQLite's online backup, safe while serving (#25).
 - Flag model with variants, ordered targeting rules (15 operators, nested attributes) and stable percentage rollouts.
 - Validation errors that name the exact field (e.g. `rules[0].conditions[1].op`).
 - SQLite store with per-flag versions, optimistic concurrency, an audit log, a revision counter and schema migrations.

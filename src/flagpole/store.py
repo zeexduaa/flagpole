@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .flags import Flag
+from .flags import Flag, FlagError
 
 #: Each entry upgrades the schema by one version. Never edit a released entry: add a new one.
 MIGRATIONS: list[str] = [
@@ -94,6 +94,19 @@ class AuditEntry:
             "id": self.id, "at": self.at, "actor": self.actor, "action": self.action,
             "flag": self.flag, "version": self.version, "before": self.before, "after": self.after,
         }
+
+
+@dataclass
+class ImportResult:
+    created: list[str]
+    updated: list[str]
+    unchanged: list[str]
+    #: Flags that already existed and were left alone (import without overwrite).
+    skipped: list[str]
+
+    def summary(self) -> str:
+        return (f"{len(self.created)} created, {len(self.updated)} updated, "
+                f"{len(self.unchanged)} unchanged, {len(self.skipped)} skipped")
 
 
 def utc_now() -> str:
@@ -294,3 +307,74 @@ class FlagStore:
                 raise VersionConflict(key, expected_version, before.version)
             db.execute("DELETE FROM flags WHERE key = ?", (key,))
             self._record(db, actor, "delete", key, before.version, before, None, at)
+
+    # ---- Import and backup ---------------------------------------------------------------
+
+    def import_flags(self, items: list[Any], actor: str, overwrite: bool = False,
+                     dry_run: bool = False) -> ImportResult:
+        """Creates (and with ``overwrite``, updates) flags from snapshot data, all or nothing.
+
+        Every flag is validated before anything is written; one bad flag means nothing
+        changes. Imported changes appear in the audit log with the action ``import``.
+        """
+        if not isinstance(items, list):
+            raise FlagError("flags", "must be a list of flags")
+        incoming: list[Flag] = []
+        seen: set[str] = set()
+        for i, raw in enumerate(items):
+            try:
+                flag = Flag.from_dict(raw)
+            except FlagError as exc:
+                raise FlagError(f"flags[{i}].{exc.path}".rstrip("."), exc.message) from None
+            if flag.key in seen:
+                raise FlagError(f"flags[{i}].key", f"{flag.key!r} appears more than once")
+            seen.add(flag.key)
+            incoming.append(flag)
+
+        result = ImportResult([], [], [], [])
+        at = self._now()
+        with self._write() as db:
+            for flag in incoming:
+                row = db.execute("SELECT * FROM flags WHERE key = ?", (flag.key,)).fetchone()
+                if row is None:
+                    result.created.append(flag.key)
+                    if not dry_run:
+                        db.execute(
+                            "INSERT INTO flags (key, definition, version, created_at, updated_at) "
+                            "VALUES (?, ?, 1, ?, ?)",
+                            (flag.key, json.dumps(flag.definition()), at, at),
+                        )
+                        saved = Flag.from_dict({**flag.definition(), "version": 1}, key=flag.key)
+                        self._record(db, actor, "import", flag.key, 1, None, saved, at)
+                    continue
+                before = self._row_to_flag(row)
+                if before.definition() == flag.definition():
+                    result.unchanged.append(flag.key)
+                elif not overwrite:
+                    result.skipped.append(flag.key)
+                else:
+                    result.updated.append(flag.key)
+                    if not dry_run:
+                        version = before.version + 1
+                        db.execute(
+                            "UPDATE flags SET definition = ?, version = ?, updated_at = ? WHERE key = ?",
+                            (json.dumps(flag.definition()), version, at, flag.key),
+                        )
+                        after = Flag.from_dict({**flag.definition(), "version": version}, key=flag.key)
+                        self._record(db, actor, "import", flag.key, version, before, after, at)
+        return result
+
+    def backup(self, destination: str | Path) -> Path:
+        """Copies the whole database to ``destination`` using SQLite's online backup.
+
+        Safe while the server is running: readers and writers just wait a moment.
+        """
+        destination = Path(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        target = sqlite3.connect(destination)
+        try:
+            with self._lock:
+                self._db.backup(target)
+        finally:
+            target.close()
+        return destination

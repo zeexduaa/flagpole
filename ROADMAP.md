@@ -18,7 +18,7 @@ Sizes are rough guesses (S = a few hours, M = about a day, L = several days, XL 
 - [ ] **Environments** (development, staging, production) with separate flag states and tokens per environment (XL)
 - [ ] **Projects** to group flags for different apps (L)
 - [ ] **Promote a flag** from one environment to another with a diff preview (M)
-- [ ] **Import a snapshot** (`flagpole import`) to restore or seed a database (M)
+- [x] **Import a snapshot** (`flagpole import`) to restore or seed a database (M)
 
 ## v0.3: smarter targeting
 
@@ -54,7 +54,7 @@ Sizes are rough guesses (S = a few hours, M = about a day, L = several days, XL 
 ## v1.0: production ready
 
 - [ ] **Docker image** and a docker-compose example with Caddy for HTTPS (M)
-- [ ] **Backups**: `flagpole backup` using SQLite's online backup API (S)
+- [x] **Backups**: `flagpole backup` using SQLite's online backup API (S)
 - [ ] **Load test** and published numbers for evaluate/snapshot throughput (M)
 - [ ] **Publish to PyPI** (S)
 - [ ] **Docs site** with guides: gradual rollouts, kill switches, A/B tests (L)

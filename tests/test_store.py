@@ -172,3 +172,68 @@ def test_memory_database_works():
     with FlagStore(":memory:") as s:
         s.create({"key": "x"}, actor="t")
         assert s.get("x").version == 1
+
+
+# ---- Import and backup ---------------------------------------------------------------------
+
+
+def test_import_creates_skips_and_overwrites(store):
+    store.create({"key": "keep", "description": "old"}, actor="sam")
+    store.create({"key": "same"}, actor="sam")
+    items = [{"key": "new-one", "enabled": True}, {"key": "keep", "description": "new"}, {"key": "same"}]
+
+    result = store.import_flags(items, actor="ci")
+    assert (result.created, result.updated, result.unchanged, result.skipped) == (["new-one"], [], ["same"], ["keep"])
+    assert store.get("keep").description == "old"
+    assert store.get("new-one").enabled is True
+
+    result = store.import_flags(items, actor="ci", overwrite=True)
+    assert (result.created, result.updated, result.unchanged) == ([], ["keep"], ["new-one", "same"])
+    keep = store.get("keep")
+    assert (keep.description, keep.version) == ("new", 2)
+    assert [e.action for e in store.audit(flag="keep")] == ["import", "create"]
+    assert result.summary() == "0 created, 1 updated, 2 unchanged, 0 skipped"
+
+
+def test_import_is_all_or_nothing(store):
+    items = [{"key": "good"}, {"key": "bad", "default": {"variant": "nope"}}]
+    with pytest.raises(FlagError) as info:
+        store.import_flags(items, actor="ci")
+    assert info.value.path == "flags[1].default.variant"
+    assert store.get("good") is None and store.revision() == 0
+
+
+def test_import_rejects_duplicates_and_non_lists(store):
+    with pytest.raises(FlagError, match="more than once"):
+        store.import_flags([{"key": "a"}, {"key": "a"}], actor="ci")
+    with pytest.raises(FlagError, match="must be a list"):
+        store.import_flags({"key": "a"}, actor="ci")
+
+
+def test_import_dry_run_changes_nothing(store):
+    store.create({"key": "a", "description": "old"}, actor="sam")
+    result = store.import_flags([{"key": "a", "description": "new"}, {"key": "b"}], actor="ci",
+                                overwrite=True, dry_run=True)
+    assert (result.created, result.updated) == (["b"], ["a"])
+    assert store.get("b") is None and store.get("a").description == "old" and store.revision() == 1
+
+
+def test_export_then_import_round_trip(tmp_path):
+    with FlagStore(tmp_path / "a.db") as source:
+        source.create({"key": "x", "enabled": True, "variants": {"a": 1, "b": 2}, "default": {"variant": "b"}},
+                      actor="sam")
+        source.create({"key": "y", "tags": ["t"]}, actor="sam")
+        _, flags = source.snapshot()
+    with FlagStore(tmp_path / "b.db") as target:
+        assert target.import_flags([f.to_dict() for f in flags], actor="restore").created == ["x", "y"]
+        assert [f.definition() for f in target.list()] == [f.definition() for f in flags]
+
+
+def test_backup_is_a_complete_working_copy(store, tmp_path):
+    store.create({"key": "a", "enabled": True}, actor="sam")
+    store.set_enabled("a", False, actor="sam")
+    copy = store.backup(tmp_path / "backups" / "copy.db")
+    with FlagStore(copy) as restored:
+        assert restored.get("a").version == 2
+        assert len(restored.audit()) == 2
+        assert restored.revision() == store.revision()
