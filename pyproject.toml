@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flagpole"
+version = "0.1.0"
+description = "A small self-hosted feature-flag service: targeting rules, percentage rollouts, audit log, REST API and a Python SDK."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Syed Ali" }]
+requires-python = ">=3.11"
+dependencies = []
+keywords = ["feature flags", "feature toggles", "rollout", "a/b testing", "self-hosted"]
+classifiers = [
+    "Environment :: Web Environment",
+    "Framework :: Pytest",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+flagpole = "flagpole.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/zeexduaa/flagpole"
+Issues = "https://github.com/zeexduaa/flagpole/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
