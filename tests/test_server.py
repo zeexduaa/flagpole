@@ -132,3 +132,28 @@ def test_tokens_must_be_strong_and_different():
         Tokens("short", CLIENT)
     with pytest.raises(ValueError, match="different"):
         Tokens(ADMIN, ADMIN)
+
+
+def test_oversized_body_gets_a_413_not_a_connection_reset(live):
+    # Regression test: the server used to answer before reading the body, which macOS
+    # turned into "connection reset by peer" on the client.
+    for _ in range(3):
+        status, body, _ = live.call("POST", "/api/flags", raw=b"x" * (300 * 1024))
+        assert status == 413 and body["error"]["code"] == "body_too_large"
+
+
+def test_server_starts_quickly():
+    # Regression test: HTTPServer's reverse DNS lookup made startup take seconds on macOS.
+    import time
+
+    from flagpole.server import create_server
+    from flagpole.store import FlagStore
+
+    with FlagStore(":memory:") as store:
+        started = time.perf_counter()
+        server = create_server(store, Tokens(ADMIN, CLIENT), "127.0.0.1", 0, log=lambda line: None)
+        try:
+            assert time.perf_counter() - started < 0.5
+            assert server.server_name == "127.0.0.1"
+        finally:
+            server.server_close()

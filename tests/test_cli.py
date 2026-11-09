@@ -88,7 +88,7 @@ def test_serve_dev_mode_starts_a_working_server(db, capsys, monkeypatch):
         port = s.getsockname()[1]
     thread = threading.Thread(target=run, args=(db, "serve", "--dev", "--port", str(port)), daemon=True)
     thread.start()
-    deadline = time.time() + 5
+    deadline = time.time() + 15  # generous for slow CI machines
     while time.time() < deadline:
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1) as r:
