@@ -134,7 +134,7 @@ Newest first; `limit` is 1–500 (anything else is a `400`). Pass `before` = `ne
 }
 ```
 
-`action` is `create`, `update`, `enable`, `disable` or `delete`. `before` is null for creates; `after` is null for deletes.
+`action` is `create`, `update`, `enable`, `disable`, `delete` or `import` (from `flagpole import`). `before` is null for creates; `after` is null for deletes.
 
 ## For apps
 

@@ -126,3 +126,46 @@ def test_db_option_works_after_the_subcommand(tmp_path, monkeypatch, capsys):
     assert main(["--db", db, "flags", "show", "x"]) == 0
     other = str(tmp_path / "other.db")
     assert main(["--db", other, "flags", "show", "x", "--db", db]) == 0
+
+
+def test_export_import_and_backup_commands(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    source, target = str(tmp_path / "source.db"), str(tmp_path / "target.db")
+    main(["flags", "create", "a", "--db", source])
+    main(["flags", "create", "b", "--description", "B", "--db", source])
+    capsys.readouterr()
+    assert main(["export", "--db", source]) == 0
+    (tmp_path / "snap.json").write_text(capsys.readouterr().out)
+
+    assert main(["import", "snap.json", "--db", target, "--dry-run"]) == 0
+    assert "Dry run, nothing saved: 2 created" in capsys.readouterr().out
+    assert main(["import", "snap.json", "--db", target, "--actor", "restore"]) == 0
+    assert "2 created, 0 updated, 0 unchanged, 0 skipped." in capsys.readouterr().out
+    main(["flags", "update", "b", "--db", target, "--json", str(_write(tmp_path / "b.json", {"description": "changed"}))])
+    capsys.readouterr()
+    assert main(["import", "snap.json", "--db", target]) == 0
+    out = capsys.readouterr().out
+    assert "1 skipped" in out and "--overwrite" in out
+    assert main(["import", "snap.json", "--db", target, "--overwrite"]) == 0
+    assert "1 updated" in capsys.readouterr().out
+
+    assert main(["backup", "copy.db", "--db", target]) == 0
+    assert "Backed up" in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="already exists"):
+        main(["backup", "copy.db", "--db", target])
+    assert main(["backup", "copy.db", "--db", target, "--force"]) == 0
+
+
+def test_import_reports_the_bad_flag(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    _write(tmp_path / "bad.json", [{"key": "ok"}, {"key": "Not OK"}])
+    assert main(["import", "bad.json", "--db", str(tmp_path / "x.db")]) == 2
+    assert "flags[1].key" in capsys.readouterr().err
+    _write(tmp_path / "wrong.json", {"nope": 1})
+    with pytest.raises(SystemExit, match="expected a snapshot"):
+        main(["import", "wrong.json", "--db", str(tmp_path / "x.db")])
+
+
+def _write(path, data):
+    path.write_text(json.dumps(data))
+    return path

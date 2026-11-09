@@ -187,6 +187,33 @@ def cmd_audit(args: argparse.Namespace, store: FlagStore) -> int:
     return 0
 
 
+def cmd_import(args: argparse.Namespace, store: FlagStore) -> int:
+    data = _read_json(args.file)
+    items = data.get("flags") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        raise SystemExit('flagpole: expected a snapshot ({"flags": [...]}, as written by export) or a list of flags')
+    result = store.import_flags(items, actor=args.actor, overwrite=args.overwrite, dry_run=args.dry_run)
+    prefix = "Dry run, nothing saved: " if args.dry_run else ""
+    print(f"{prefix}{result.summary()}.")
+    for label, keys in (("created", result.created), ("updated", result.updated), ("skipped", result.skipped)):
+        if keys:
+            print(f"  {label}: {', '.join(keys)}")
+    if result.skipped:
+        print("  (skipped flags already exist with different settings; use --overwrite to replace them)")
+    return 0
+
+
+def cmd_backup(args: argparse.Namespace, store: FlagStore) -> int:
+    destination = Path(args.destination)
+    if destination.exists() and not args.force:
+        raise SystemExit(f"flagpole: {destination} already exists (use --force to overwrite it)")
+    if destination.exists():
+        destination.unlink()
+    store.backup(destination)
+    print(f"Backed up {store.path} to {destination} ({destination.stat().st_size:,} bytes).")
+    return 0
+
+
 def cmd_export(args: argparse.Namespace, store: FlagStore) -> int:
     revision, flags = store.snapshot()
     _print_json({"revision": revision, "flags": [f.to_dict() for f in flags]})
@@ -257,6 +284,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("export", help="print all flags as a snapshot (JSON)", parents=[db])
     p.set_defaults(func=cmd_export)
+
+    p = sub.add_parser("import", help="create flags from a snapshot or list (all or nothing)", parents=[actor])
+    p.add_argument("file", help="JSON file from `flagpole export` (- for stdin)")
+    p.add_argument("--overwrite", action="store_true", help="replace flags that already exist")
+    p.add_argument("--dry-run", action="store_true", help="show what would change without saving")
+    p.set_defaults(func=cmd_import)
+
+    p = sub.add_parser("backup", help="copy the database to a file (safe while serving)", parents=[db])
+    p.add_argument("destination")
+    p.add_argument("--force", action="store_true", help="overwrite an existing file")
+    p.set_defaults(func=cmd_backup)
     return parser
 
 
