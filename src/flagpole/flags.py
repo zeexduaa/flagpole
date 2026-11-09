@@ -215,7 +215,8 @@ class Serve:
         for name, pct in rollout.items():
             if name not in variants:
                 raise FlagError(f"{path}.rollout", f"unknown variant {name!r}")
-            if not _is_number(pct) or pct < 0 or round(pct * 100) != pct * 100:
+            # Compare with a tolerance: in floating point 0.29 * 100 is 28.999999999999996.
+            if not _is_number(pct) or not 0 <= pct <= 100 or abs(pct * 100 - round(pct * 100)) > 1e-6:
                 raise FlagError(f"{path}.rollout.{name}", "must be a percentage from 0 to 100 with at most 2 decimals")
             weights.append((name, float(pct)))
         total = round(sum(p for _, p in weights) * 100)

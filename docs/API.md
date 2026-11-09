@@ -1,6 +1,6 @@
 # flagpole HTTP API (v0.1)
 
-All requests and responses are JSON. Send bodies with `Content-Type: application/json` (max 256 KB).
+All requests and responses are JSON. Send bodies with `Content-Type: application/json` (max 256 KB). Every `GET` endpoint also answers `HEAD` (same status and headers, no body).
 
 ## Authentication
 
@@ -122,7 +122,7 @@ Optional `If-Match`. `204`. Apps that still check the flag get their default.
 
 ### `GET /api/audit?flag=KEY&limit=50&before=ID` (admin)
 
-Newest first; `limit` is 1–500. Pass `before` = `next_before` from the previous page to continue.
+Newest first; `limit` is 1–500 (anything else is a `400`). Pass `before` = `next_before` from the previous page to continue.
 
 ```json
 {
@@ -144,7 +144,7 @@ Newest first; `limit` is 1–500. Pass `before` = `next_before` from the previou
 {"revision": 12, "flags": [<flag>, ...]}
 ```
 
-Responds with `ETag: "r<revision>"`. Send it back as `If-None-Match` and get `304 Not Modified` (empty body) until something changes. This is what the Python SDK polls.
+Responds with `ETag: "r<revision>"`. Send it back as `If-None-Match` and get `304 Not Modified` (empty body) until something changes. Weak tags (`W/"r12"`), comma-separated lists and `*` are understood too. This is what the Python SDK polls.
 
 ### `POST /api/evaluate` (client)
 

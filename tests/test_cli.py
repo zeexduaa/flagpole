@@ -107,3 +107,22 @@ def test_load_dotenv(tmp_path):
     env = {"KEEP": "shell"}
     assert load_dotenv(str(path), env) == 2
     assert env == {"KEEP": "shell", "FLAGPOLE_ADMIN_TOKEN": "abc", "FLAGPOLE_DB": "x.db"}
+
+
+def test_db_option_works_after_the_subcommand(tmp_path, monkeypatch, capsys):
+    # Regression test for #33: --db used to be accepted only before the subcommand.
+    monkeypatch.chdir(tmp_path)
+    db = str(tmp_path / "after.db")
+    assert main(["flags", "create", "x", "--db", db]) == 0
+    assert main(["flags", "enable", "x", "--db", db]) == 0
+    capsys.readouterr()
+    assert main(["flags", "list", "--db", db]) == 0
+    assert "ON   x" in capsys.readouterr().out
+    assert main(["eval", "x", "--db", db]) == 0
+    assert main(["audit", "--db", db]) == 0
+    assert main(["export", "--db", db]) == 0
+    assert not (tmp_path / "flagpole.db").exists()  # nothing went to the default file
+    # The old position still works, and the subcommand one wins if both are given.
+    assert main(["--db", db, "flags", "show", "x"]) == 0
+    other = str(tmp_path / "other.db")
+    assert main(["--db", other, "flags", "show", "x", "--db", db]) == 0
