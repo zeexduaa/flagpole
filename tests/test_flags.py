@@ -267,3 +267,16 @@ def test_example_flag_file_is_valid():
     f = Flag.from_dict(data)
     assert f.evaluate({"key": "u1", "email": "sam@example.com"}).reason == "rule_match"
     assert f.evaluate({"key": "u1", "country": "US"}).reason == "default_rollout"
+
+
+@pytest.mark.parametrize("pct", [0.29, 0.57, 1.15, 33.33, 99.99])
+def test_two_decimal_percentages_are_accepted(pct):
+    # Regression test for #29: floating-point rounding used to reject these.
+    f = Flag.from_dict({"key": "x", "default": {"rollout": {"on": pct, "off": round(100 - pct, 2)}}})
+    assert f.default.rollout[0] == ("on", pct)
+
+
+@pytest.mark.parametrize("pct", [0.001, 0.295, 150])
+def test_too_many_decimals_or_over_100_still_rejected(pct):
+    with pytest.raises(FlagError):
+        Flag.from_dict({"key": "x", "default": {"rollout": {"on": pct, "off": 100 - pct}}})

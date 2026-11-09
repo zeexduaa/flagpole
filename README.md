@@ -158,7 +158,7 @@ flagpole audit [--flag KEY] [--limit N]
 flagpole export > snapshot.json
 ```
 
-The database is `flagpole.db` by default; use `flagpole --db path/to/file.db ...` or set `FLAGPOLE_DB`.
+The database is `flagpole.db` by default; pass `--db path/to/file.db` (before or after the command) or set `FLAGPOLE_DB`.
 
 ## Configuration
 

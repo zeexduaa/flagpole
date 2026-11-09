@@ -150,11 +150,12 @@ class Api:
     def handle(self, request: Request) -> Response:
         try:
             allowed = []
+            wanted = "GET" if request.method == "HEAD" else request.method  # HEAD = GET without a body
             for method, pattern, required, handler in self.routes:
                 match = pattern.match(request.path)
                 if not match:
                     continue
-                if method != request.method:
+                if method != wanted:
                     allowed.append(method)
                     continue
                 request.params = {k: unquote(v) for k, v in match.groupdict().items()}
@@ -246,8 +247,11 @@ class Api:
                 raise ApiError(400, "invalid_query", f"'{name}' must be a whole number")
             return int(raw)
 
-        entries = self.store.audit(flag=request.query.get("flag"), limit=number("limit", 50) or 50,
-                                   before_id=number("before", None))
+        limit = number("limit", 50)
+        assert limit is not None
+        if not 1 <= limit <= 500:
+            raise ApiError(400, "invalid_query", "'limit' must be from 1 to 500")
+        entries = self.store.audit(flag=request.query.get("flag"), limit=limit, before_id=number("before", None))
         body: dict[str, Any] = {"entries": [e.to_dict() for e in entries]}
         if entries:
             body["next_before"] = entries[-1].id
@@ -256,7 +260,7 @@ class Api:
     def snapshot(self, request: Request) -> Response:
         revision, flags = self.store.snapshot()
         etag = f'"r{revision}"'
-        if request.headers.get("If-None-Match") == etag:
+        if etag_matches(request.headers.get("If-None-Match"), etag):
             return Response(304, None, {"ETag": etag})
         return Response(200, {"revision": revision, "flags": [f.to_dict() for f in flags]},
                         {"ETag": etag, "Cache-Control": "no-cache"})
@@ -281,6 +285,16 @@ class Api:
                 result: Evaluation = flag.evaluate(context)
                 results[key] = result.to_dict()
         return Response(200, {"results": results})
+
+
+def etag_matches(header: str | None, etag: str) -> bool:
+    """RFC 9110 If-None-Match: "*", a list of tags, and weak (W/) tags all count."""
+    if not header:
+        return False
+    if header.strip() == "*":
+        return True
+    wanted = etag.removeprefix("W/")
+    return any(tag.strip().removeprefix("W/") == wanted for tag in header.split(","))
 
 
 # ---- Socket server -------------------------------------------------------------------------
@@ -339,7 +353,7 @@ def make_handler(api: Api, log: Callable[[str], None]) -> type[BaseHTTPRequestHa
             if payload and self.command != "HEAD":
                 self.wfile.write(payload)
 
-        do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = _serve
+        do_GET = do_HEAD = do_POST = do_PUT = do_DELETE = do_PATCH = _serve
 
         def log_message(self, format: str, *args: Any) -> None:
             pass  # replaced by our own one-line access log in _serve

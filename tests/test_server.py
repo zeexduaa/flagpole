@@ -157,3 +157,30 @@ def test_server_starts_quickly():
             assert server.server_name == "127.0.0.1"
         finally:
             server.server_close()
+
+
+def test_head_requests_work_like_get_without_a_body(live):
+    # Regression test for #30: HEAD used to get 501 Not Implemented.
+    status, body, headers = live.call("HEAD", "/health", token=None)
+    assert status == 200 and body is None
+    assert int(headers["Content-Length"]) > 0  # the size of the GET body
+    assert live.call("HEAD", "/api/snapshot", token=CLIENT)[0] == 200
+    assert live.call("HEAD", "/api/flags", token=CLIENT)[0] == 403  # same auth as GET
+
+
+@pytest.mark.parametrize("header", ['W/"r0"', '"r9", "r0"', ' "r9" , W/"r0" ', "*"])
+def test_snapshot_if_none_match_accepts_weak_tags_and_lists(live, header):
+    # Regression test for #31.
+    assert live.call("GET", "/api/snapshot", token=CLIENT, headers={"If-None-Match": header})[0] == 304
+
+
+def test_snapshot_if_none_match_with_other_tags_still_downloads(live):
+    assert live.call("GET", "/api/snapshot", token=CLIENT, headers={"If-None-Match": '"r9", W/"r8"'})[0] == 200
+
+
+@pytest.mark.parametrize("limit", ["0", "501"])
+def test_audit_limit_out_of_range_is_an_error(live, limit):
+    # Regression test for #32: limit=0 used to return 50 entries silently.
+    status, body, _ = live.call("GET", f"/api/audit?limit={limit}")
+    assert status == 400 and "from 1 to 500" in body["error"]["message"]
+    assert live.call("GET", "/api/audit?limit=500")[0] == 200

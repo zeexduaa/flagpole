@@ -201,23 +201,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"flagpole {__version__}")
     parser.add_argument("--db", default=os.environ.get(DB_ENV, "flagpole.db"),
                         help=f"SQLite database file (default: ${DB_ENV} or flagpole.db)")
+    # Also accept --db after the subcommand ("flagpole flags list --db x.db"). SUPPRESS means
+    # the subcommand only overrides the top-level value when --db is actually given there.
+    db = argparse.ArgumentParser(add_help=False)
+    db.add_argument("--db", default=argparse.SUPPRESS, help="SQLite database file")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("serve", help="run the API server")
+    p = sub.add_parser("serve", help="run the API server", parents=[db])
     p.add_argument("--host", default="127.0.0.1", help="address to listen on (default: 127.0.0.1)")
     p.add_argument("--port", type=int, default=8080)
     p.add_argument("--dev", action="store_true", help="make up throwaway tokens if none are set")
     p.set_defaults(func=cmd_serve, needs_store=False)
 
-    actor = argparse.ArgumentParser(add_help=False)
+    actor = argparse.ArgumentParser(add_help=False, parents=[db])
     actor.add_argument("--actor", default=_default_actor(), help="name recorded in the audit log")
 
     flags = sub.add_parser("flags", help="manage flags").add_subparsers(dest="flags_command", required=True)
-    p = flags.add_parser("list", help="list flags")
+    p = flags.add_parser("list", help="list flags", parents=[db])
     p.add_argument("--tag")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_list)
-    p = flags.add_parser("show", help="print a flag as JSON")
+    p = flags.add_parser("show", help="print a flag as JSON", parents=[db])
     p.add_argument("key")
     p.set_defaults(func=cmd_show)
     p = flags.add_parser("create", help="create a flag (disabled, on/off variants unless --json says otherwise)",
@@ -240,18 +244,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--yes", action="store_true", help="don't ask for confirmation")
     p.set_defaults(func=cmd_delete)
 
-    p = sub.add_parser("eval", help="evaluate a flag for a context")
+    p = sub.add_parser("eval", help="evaluate a flag for a context", parents=[db])
     p.add_argument("key")
     p.add_argument("--context", default="{}", help='JSON, e.g. \'{"key": "user-1", "country": "DE"}\'')
     p.set_defaults(func=cmd_eval)
 
-    p = sub.add_parser("audit", help="show recent changes")
+    p = sub.add_parser("audit", help="show recent changes", parents=[db])
     p.add_argument("--flag")
     p.add_argument("--limit", type=int, default=20)
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_audit)
 
-    p = sub.add_parser("export", help="print all flags as a snapshot (JSON)")
+    p = sub.add_parser("export", help="print all flags as a snapshot (JSON)", parents=[db])
     p.set_defaults(func=cmd_export)
     return parser
 
