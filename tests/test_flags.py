@@ -257,3 +257,13 @@ def test_evaluation_is_fast_enough():
         f.evaluate({"key": f"u{i}", "country": "XX"})
     per_eval_us = (time.perf_counter() - start) / 5000 * 1e6
     assert per_eval_us < 500  # 20 rules x 50-item lists; generous so slow CI runners stay green
+
+
+def test_example_flag_file_is_valid():
+    import json
+    from pathlib import Path
+
+    data = json.loads((Path(__file__).parent.parent / "examples" / "new-checkout.json").read_text())
+    f = Flag.from_dict(data)
+    assert f.evaluate({"key": "u1", "email": "sam@example.com"}).reason == "rule_match"
+    assert f.evaluate({"key": "u1", "country": "US"}).reason == "default_rollout"

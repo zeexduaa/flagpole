@@ -1,0 +1,24 @@
+{
+  "key": "new-checkout",
+  "description": "Redesigned checkout flow",
+  "enabled": true,
+  "variants": { "on": true, "off": false },
+  "off_variant": "off",
+  "rules": [
+    {
+      "description": "Staff always get it",
+      "conditions": [{ "attribute": "email", "op": "ends_with", "value": "@example.com" }],
+      "serve": { "variant": "on" }
+    },
+    {
+      "description": "Pro accounts in Germany and Austria: 50% rollout",
+      "conditions": [
+        { "attribute": "country", "op": "in", "value": ["DE", "AT"] },
+        { "attribute": "plan", "op": "eq", "value": "pro" }
+      ],
+      "serve": { "rollout": { "on": 50, "off": 50 } }
+    }
+  ],
+  "default": { "rollout": { "on": 10, "off": 90 } },
+  "tags": ["checkout", "q4"]
+}
