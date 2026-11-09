@@ -25,6 +25,7 @@ from __future__ import annotations
 import hmac
 import json
 import re
+import socketserver
 import sys
 import time
 from collections.abc import Callable
@@ -39,6 +40,9 @@ from .flags import Evaluation, FlagError
 from .store import AlreadyExists, FlagStore, NotFound, VersionConflict
 
 MAX_BODY = 256 * 1024
+#: Oversized bodies up to this size are read and discarded before answering 413, so the
+#: client gets the error instead of a connection reset. Anything bigger just closes.
+MAX_DRAIN = 4 * 1024 * 1024
 ACTOR_PATTERN = re.compile(r"^[\w.@+-]{1,64}$")
 
 
@@ -295,6 +299,7 @@ def make_handler(api: Api, log: Callable[[str], None]) -> type[BaseHTTPRequestHa
                 response = Api._error(ApiError(400, "bad_request", "invalid Content-Length"))
             elif int(length_header) > MAX_BODY:
                 response = Api._error(ApiError(413, "body_too_large", f"bodies are limited to {MAX_BODY // 1024} KB"))
+                self._discard(int(length_header))
                 self.close_connection = True
             else:
                 body = self.rfile.read(int(length_header)) if int(length_header) else b""
@@ -308,6 +313,17 @@ def make_handler(api: Api, log: Callable[[str], None]) -> type[BaseHTTPRequestHa
             self._send(response)
             elapsed = (time.perf_counter() - started) * 1000
             log(f"{self.command} {split.path} {response.status} {elapsed:.1f}ms")
+
+        def _discard(self, length: int) -> None:
+            """Reads and drops a body we won't use, so the client sees our reply (not a reset)."""
+            if length > MAX_DRAIN:
+                return
+            remaining = length
+            while remaining > 0:
+                chunk = self.rfile.read(min(remaining, 64 * 1024))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
 
         def _send(self, response: Response) -> None:
             payload = b"" if response.body is None else json.dumps(response.body, separators=(",", ":")).encode()
@@ -331,11 +347,21 @@ def make_handler(api: Api, log: Callable[[str], None]) -> type[BaseHTTPRequestHa
     return RequestHandler
 
 
+class FlagpoleHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def server_bind(self) -> None:
+        # HTTPServer.server_bind calls socket.getfqdn(), a reverse DNS lookup that can take
+        # seconds on some systems (notably macOS). We never use the result, so skip it.
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
+
+
 def create_server(store: FlagStore, tokens: Tokens, host: str = "127.0.0.1", port: int = 8080,
                   log: Callable[[str], None] | None = None) -> ThreadingHTTPServer:
     def default_log(line: str) -> None:
         print(f"{time.strftime('%H:%M:%S')} {line}", file=sys.stderr, flush=True)
 
-    server = ThreadingHTTPServer((host, port), make_handler(Api(store, tokens), log or default_log))
-    server.daemon_threads = True
-    return server
+    return FlagpoleHTTPServer((host, port), make_handler(Api(store, tokens), log or default_log))
